@@ -309,6 +309,29 @@ func launchParsedJNLPWithStart(javaExe, dir string, parsed *jnlp.File, jars []st
 		return err
 	}
 	native := jnlp.NativeDir(dir, jars)
+	if parsed.Applet {
+		runner, err := java.EnsureAppletRunner()
+		if err != nil {
+			return err
+		}
+		documentBase := parsed.DocumentBase
+		if documentBase == "" {
+			documentBase = parsed.Codebase
+		}
+		args := []string{
+			"-Duser.language=en",
+			"-Duser.country=US",
+			"-Djava.library.path=" + native,
+			"-cp", jnlp.Classpath(append([]string{runner}, jars...)),
+			"kvm.launcher.AppletRunner",
+			parsed.Main,
+			documentBase,
+		}
+		for _, param := range parsed.Params {
+			args = append(args, param.Name+"="+param.Value)
+		}
+		return starter(javaExe, args, dir)
+	}
 	args := []string{
 		"-Djava.library.path=" + native,
 		"-cp", jnlp.Classpath(jars),

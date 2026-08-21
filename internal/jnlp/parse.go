@@ -14,10 +14,18 @@ import (
 )
 
 type File struct {
-	Codebase string
-	Jars     []string
-	Main     string
-	Args     []string
+	Codebase     string
+	Jars         []string
+	Main         string
+	Args         []string
+	Applet       bool
+	DocumentBase string
+	Params       []Param
+}
+
+type Param struct {
+	Name  string
+	Value string
 }
 
 type rawJNLP struct {
@@ -38,7 +46,12 @@ type rawJNLP struct {
 		Args []string `xml:"argument"`
 	} `xml:"application-desc"`
 	Applets []struct {
-		Main string `xml:"main-class,attr"`
+		Main         string `xml:"main-class,attr"`
+		DocumentBase string `xml:"documentbase,attr"`
+		Params       []struct {
+			Name  string `xml:"name,attr"`
+			Value string `xml:"value,attr"`
+		} `xml:"param"`
 	} `xml:"applet-desc"`
 }
 
@@ -56,7 +69,15 @@ func Parse(path, fallbackCodebase string) (*File, error) {
 		f.Codebase = fallbackCodebase
 	}
 	if f.Main == "" && len(raw.Applets) > 0 {
+		f.Applet = true
 		f.Main = raw.Applets[0].Main
+		f.DocumentBase = raw.Applets[0].DocumentBase
+		for _, param := range raw.Applets[0].Params {
+			if param.Name == "" {
+				continue
+			}
+			f.Params = append(f.Params, Param{Name: param.Name, Value: param.Value})
+		}
 	}
 	for _, res := range raw.Resources {
 		if !matchesRuntime(res.OS, res.Arch) {

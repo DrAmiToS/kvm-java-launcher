@@ -167,7 +167,9 @@ func (c *Client) PostRawResponse(path, bodyText string, headers http.Header) ([]
 		return nil, nil, nil, err
 	}
 	c.applyRequestHost(req)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if headers.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 	for name, values := range headers {
 		for _, value := range values {
 			req.Header.Add(name, value)

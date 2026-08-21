@@ -17,7 +17,11 @@ import (
 //go:embed OpenJDK8U-jre_x64_windows_hotspot.zip
 var runtimeFS embed.FS
 
+//go:embed applet-runner.jar
+var appletRunnerFS embed.FS
+
 const runtimeZip = "OpenJDK8U-jre_x64_windows_hotspot.zip"
+const appletRunnerJar = "applet-runner.jar"
 
 func CacheRoot() (string, error) {
 	if runtime.GOOS == "windows" {
@@ -44,7 +48,7 @@ func EnsureJava() (string, error) {
 		return "", err
 	}
 	target := filepath.Join(root, "java8-"+version)
-	javaExe := filepath.Join(target, "bin", "javaw.exe")
+	javaExe := filepath.Join(target, "bin", "java.exe")
 	if _, err := os.Stat(javaExe); err == nil {
 		return javaExe, nil
 	}
@@ -60,7 +64,29 @@ func EnsureJava() (string, error) {
 	if _, err := os.Stat(javaExe); err == nil {
 		return javaExe, nil
 	}
-	return "", errors.New("embedded Java was extracted, but bin/javaw.exe was not found")
+	return "", errors.New("embedded Java was extracted, but bin/java.exe was not found")
+}
+
+func EnsureAppletRunner() (string, error) {
+	blob, err := appletRunnerFS.ReadFile(appletRunnerJar)
+	if err != nil {
+		return "", err
+	}
+	root, err := CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(root, appletRunnerJar)
+	if existing, err := os.ReadFile(target); err == nil && bytes.Equal(existing, blob) {
+		return target, nil
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(target, blob, 0o644); err != nil {
+		return "", err
+	}
+	return target, nil
 }
 
 func unzipJRE(blob []byte, target string) error {
