@@ -66,16 +66,25 @@ func Parse(path, fallbackCodebase string) (*File, error) {
 			if jar.Href == "" {
 				continue
 			}
-			f.Jars = append(f.Jars, jar.Href)
+			f.Jars = appendStringUnique(f.Jars, jar.Href)
 		}
 		for _, jar := range res.NativeLibs {
 			if jar.Href == "" {
 				continue
 			}
-			f.Jars = append(f.Jars, jar.Href)
+			f.Jars = appendStringUnique(f.Jars, jar.Href)
 		}
 	}
 	return f, nil
+}
+
+func appendStringUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func matchesRuntime(osName, arch string) bool {
@@ -145,7 +154,7 @@ func DownloadResourcesWithHeaders(client *http.Client, parsed *File, dir string,
 }
 
 func downloadResourceCandidates(client *http.Client, rawURL, dir string, headers http.Header) (string, error) {
-	var lastErr error
+	var errs []string
 	for i, candidate := range resourceCandidates(rawURL) {
 		if i > 0 {
 			fmt.Println("Retrying resource:", candidate)
@@ -154,9 +163,9 @@ func downloadResourceCandidates(client *http.Client, rawURL, dir string, headers
 		if err == nil {
 			return path, nil
 		}
-		lastErr = err
+		errs = append(errs, err.Error())
 	}
-	return "", lastErr
+	return "", fmt.Errorf("resource download failed (%s)", strings.Join(errs, "; "))
 }
 
 func resourceCandidates(rawURL string) []string {

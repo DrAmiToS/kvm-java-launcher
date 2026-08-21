@@ -18,11 +18,12 @@ import (
 )
 
 type options struct {
-	target   string
-	user     string
-	password string
-	profile  string
-	jnlpPath string
+	target     string
+	user       string
+	password   string
+	profile    string
+	jnlpPath   string
+	hostHeader string
 }
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 	flag.StringVar(&opts.password, "password", "", "BMC password")
 	flag.StringVar(&opts.profile, "profile", "auto", "auto, ami, supermicro, supermicro-sol, dell, hp, lenovo, generic, manual")
 	flag.StringVar(&opts.jnlpPath, "jnlp", "", "local JNLP file for manual mode")
+	flag.StringVar(&opts.hostHeader, "host-header", "", "HTTP Host/SNI override for NAT, for example 192.168.7.70")
 	flag.Parse()
 
 	if opts.target == "" && opts.jnlpPath == "" {
@@ -51,6 +53,7 @@ func askOptions(opts options) options {
 	fmt.Println("KVM Java Launcher")
 	fmt.Println()
 	opts.target = ask(in, "BMC IP/URL", opts.target)
+	opts.hostHeader = ask(in, "Host header for NAT (optional)", opts.hostHeader)
 	opts.user = ask(in, "User", opts.user)
 	fmt.Print("Password: ")
 	pw, _ := in.ReadString('\n')
@@ -89,12 +92,27 @@ func run(opts options) error {
 	}
 
 	if opts.profile == "manual" {
-		return launchLocalJNLP(javaExe, opts.jnlpPath)
+		var httpClient *http.Client
+		if opts.target != "" {
+			client, err := bmc.New(opts.target, opts.user, opts.password)
+			if err != nil {
+				return err
+			}
+			if opts.hostHeader != "" {
+				client.SetHostHeader(opts.hostHeader)
+			}
+			httpClient = client.HTTP
+		}
+		return launchLocalJNLP(javaExe, opts.jnlpPath, httpClient)
 	}
 
 	client, err := bmc.New(opts.target, opts.user, opts.password)
 	if err != nil {
 		return err
+	}
+	if opts.hostHeader != "" {
+		client.SetHostHeader(opts.hostHeader)
+		fmt.Println("Using Host header override:", opts.hostHeader)
 	}
 	profile := bmc.Profile(strings.ToLower(opts.profile))
 	profile = normalizeProfile(profile)
@@ -114,6 +132,15 @@ func run(opts options) error {
 	case bmc.ProfileSupermicroSOL:
 		fmt.Println("Looking for Supermicro SOL JNLP...")
 		plan, err = bmc.PlanSupermicroSOL(client)
+	case bmc.ProfileDell:
+		fmt.Println("Looking for Dell iDRAC JNLP...")
+		plan, err = bmc.PlanDell(client)
+	case bmc.ProfileHP:
+		fmt.Println("Looking for HPE iLO JNLP...")
+		plan, err = bmc.PlanHP(client)
+	case bmc.ProfileLenovo:
+		fmt.Println("Looking for Lenovo remote console JNLP...")
+		plan, err = bmc.PlanLenovo(client)
 	case bmc.ProfileGenericJNLP:
 		fmt.Println("Looking for vendor JNLP...")
 		plan, err = bmc.PlanGenericJNLP(client, profile)
@@ -146,14 +173,18 @@ func run(opts options) error {
 				return err
 			}
 		}
-		return launchDownloadedJNLP(javaExe, client, plan.JNLPURL, path, work, plan.Headers)
+		return launchDownloadedJNLP(javaExe, client, plan, path, work)
 	}
 	return fmt.Errorf("profile %s did not produce a launch plan", plan.Profile)
 }
 
 func normalizeProfile(profile bmc.Profile) bmc.Profile {
 	switch profile {
-	case "dell", "hp", "hpe", "lenovo", "ibm", "generic":
+	case "hpe":
+		return bmc.ProfileHP
+	case "ibm":
+		return bmc.ProfileLenovo
+	case "generic":
 		return bmc.ProfileGenericJNLP
 	default:
 		return profile
@@ -199,7 +230,7 @@ func normalizeAMIArgs(args []string) []string {
 	return out
 }
 
-func launchLocalJNLP(javaExe, path string) error {
+func launchLocalJNLP(javaExe, path string, httpClient *http.Client) error {
 	if path == "" {
 		return fmt.Errorf("JNLP path is required")
 	}
@@ -208,24 +239,32 @@ func launchLocalJNLP(javaExe, path string) error {
 	if err != nil {
 		return err
 	}
-	jars, err := jnlp.DownloadResources(nil, parsed, dir)
+	jars, err := jnlp.DownloadResources(httpClient, parsed, dir)
 	if err != nil {
 		return err
 	}
 	return launchParsedJNLP(javaExe, dir, parsed, jars)
 }
 
-func launchDownloadedJNLP(javaExe string, client *bmc.Client, jnlpURL, path, dir string, headers http.Header) error {
-	base := resourceBase(client, jnlpURL)
+func launchDownloadedJNLP(javaExe string, client *bmc.Client, plan *bmc.LaunchPlan, path, dir string) error {
+	base := resourceBase(client, plan.JNLPURL)
 	parsed, err := jnlp.Parse(path, base)
 	if err != nil {
 		return fmt.Errorf("could not parse downloaded JNLP %s: %w", path, err)
 	}
 	fmt.Println("JNLP codebase:", parsed.Codebase)
 	fmt.Println("JNLP resources:", strings.Join(parsed.Jars, ", "))
-	jars, err := jnlp.DownloadResourcesWithHeaders(client.HTTP, parsed, dir, headers)
+	jars, err := jnlp.DownloadResourcesWithHeaders(client.HTTP, parsed, dir, plan.Headers)
 	if err != nil {
 		return err
+	}
+	if plan.PostExitPath != "" {
+		return launchParsedJNLPAndWait(javaExe, dir, parsed, jars, func() {
+			fmt.Println("Closing BMC web session...")
+			if _, _, _, err := client.PostRawResponse(plan.PostExitPath, "", nil); err != nil {
+				fmt.Println("BMC web logout was not confirmed:", err)
+			}
+		})
 	}
 	return launchParsedJNLP(javaExe, dir, parsed, jars)
 }
@@ -255,6 +294,16 @@ func pathDir(p string) string {
 }
 
 func launchParsedJNLP(javaExe, dir string, parsed *jnlp.File, jars []string) error {
+	return launchParsedJNLPWithStart(javaExe, dir, parsed, jars, start)
+}
+
+func launchParsedJNLPAndWait(javaExe, dir string, parsed *jnlp.File, jars []string, afterExit func()) error {
+	return launchParsedJNLPWithStart(javaExe, dir, parsed, jars, func(javaExe string, args []string, dir string) error {
+		return startAndWait(javaExe, args, dir, afterExit)
+	})
+}
+
+func launchParsedJNLPWithStart(javaExe, dir string, parsed *jnlp.File, jars []string, starter func(string, []string, string) error) error {
 	jars, err := unpackPackedJars(javaExe, jars)
 	if err != nil {
 		return err
@@ -266,7 +315,7 @@ func launchParsedJNLP(javaExe, dir string, parsed *jnlp.File, jars []string) err
 		parsed.Main,
 	}
 	args = append(args, parsed.Args...)
-	return start(javaExe, args, dir)
+	return starter(javaExe, args, dir)
 }
 
 func unpackPackedJars(javaExe string, jars []string) ([]string, error) {
@@ -298,6 +347,29 @@ func unpack200Name() string {
 }
 
 func start(javaExe string, args []string, dir string) error {
+	return startAndWait(javaExe, args, dir, nil)
+}
+
+func startAndWait(javaExe string, args []string, dir string, afterExit func()) error {
+	cmd := javaCommand(javaExe, args, dir)
+	fmt.Println("Starting Java KVM...")
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+	if afterExit != nil {
+		fmt.Println("Waiting for Java KVM to exit before closing BMC web session...")
+	} else {
+		fmt.Println("Waiting for Java KVM to exit...")
+	}
+	waitErr := cmd.Wait()
+	if afterExit != nil {
+		afterExit()
+	}
+	return waitErr
+}
+
+func javaCommand(javaExe string, args []string, dir string) *exec.Cmd {
 	if runtime.GOOS != "windows" {
 		fmt.Println("Java:", javaExe)
 		fmt.Println("Args:", redact(args))
@@ -307,8 +379,7 @@ func start(javaExe string, args []string, dir string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	fmt.Println("Starting Java KVM...")
-	return cmd.Start()
+	return cmd
 }
 
 func redact(args []string) []string {

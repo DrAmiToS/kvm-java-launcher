@@ -54,6 +54,12 @@ func DownloadWithHeaders(client *http.Client, rawURL, dir string, headers http.H
 		return "", err
 	}
 	for name, values := range headers {
+		if strings.EqualFold(name, "Host") {
+			if len(values) > 0 {
+				req.Host = values[0]
+			}
+			continue
+		}
 		for _, value := range values {
 			req.Header.Add(name, value)
 		}

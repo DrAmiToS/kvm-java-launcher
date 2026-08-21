@@ -22,11 +22,19 @@ func TestResourceBaseUsesJNLPDirectory(t *testing.T) {
 	}
 }
 
-func TestNormalizeVendorProfilesToGenericJNLP(t *testing.T) {
+func TestNormalizeProfiles(t *testing.T) {
 	t.Parallel()
-	for _, profile := range []bmc.Profile{"dell", "hp", "hpe", "lenovo", "ibm", "generic"} {
-		if got := normalizeProfile(profile); got != bmc.ProfileGenericJNLP {
-			t.Fatalf("normalizeProfile(%q) = %q", profile, got)
+	cases := map[bmc.Profile]bmc.Profile{
+		"dell":    bmc.ProfileDell,
+		"hp":      bmc.ProfileHP,
+		"hpe":     bmc.ProfileHP,
+		"lenovo":  bmc.ProfileLenovo,
+		"ibm":     bmc.ProfileLenovo,
+		"generic": bmc.ProfileGenericJNLP,
+	}
+	for profile, want := range cases {
+		if got := normalizeProfile(profile); got != want {
+			t.Fatalf("normalizeProfile(%q) = %q, want %q", profile, got, want)
 		}
 	}
 }

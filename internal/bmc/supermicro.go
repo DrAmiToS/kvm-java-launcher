@@ -65,7 +65,7 @@ func planJNLP(c *Client, profile Profile, paths []string, accept func([]byte) bo
 func tryJNLPPaths(c *Client, profile Profile, paths []string, accept func([]byte) bool) (*LaunchPlan, []string) {
 	var errs []string
 	for _, path := range paths {
-		headers := addSIDHeader(supermicroLaunchHeaders(path), c.SID)
+		headers := addHostHeader(addSIDHeader(supermicroLaunchHeaders(path), c.SID), c.HostHeader)
 		body, err := c.GetWithHeaders(path, headers)
 		if err == nil && looksLikeJNLP(body) && (accept == nil || accept(body)) {
 			return &LaunchPlan{Profile: profile, JNLPURL: c.URL(path), JNLPBody: body, Headers: headers}, nil
@@ -95,6 +95,13 @@ func supermicroLaunchHeaders(path string) http.Header {
 func addSIDHeader(headers http.Header, sid string) http.Header {
 	if sid != "" {
 		headers.Set("Cookie", "SID="+sid)
+	}
+	return headers
+}
+
+func addHostHeader(headers http.Header, host string) http.Header {
+	if host != "" {
+		headers.Set("Host", host)
 	}
 	return headers
 }

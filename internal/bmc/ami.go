@@ -16,17 +16,21 @@ const (
 	ProfileAMIMegaRAC    Profile = "ami"
 	ProfileSupermicro    Profile = "supermicro"
 	ProfileSupermicroSOL Profile = "supermicro-sol"
+	ProfileDell          Profile = "dell"
+	ProfileHP            Profile = "hp"
+	ProfileLenovo        Profile = "lenovo"
 	ProfileGenericJNLP   Profile = "generic"
 	ProfileManualJNLP    Profile = "manual"
 )
 
 type LaunchPlan struct {
-	Profile  Profile
-	JNLPURL  string
-	JNLPBody []byte
-	Jars     []string
-	Args     []string
-	Headers  http.Header
+	Profile      Profile
+	JNLPURL      string
+	JNLPBody     []byte
+	Jars         []string
+	Args         []string
+	Headers      http.Header
+	PostExitPath string
 }
 
 type AMISession struct {
