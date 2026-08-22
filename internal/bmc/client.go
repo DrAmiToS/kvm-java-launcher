@@ -187,6 +187,43 @@ func (c *Client) PostRawResponse(path, bodyText string, headers http.Header) ([]
 	return body, resp.Header, resp.Cookies(), err
 }
 
+func (c *Client) PatchRawResponse(path, bodyText string, headers http.Header) ([]byte, http.Header, []*http.Cookie, error) {
+	return c.doRawResponse(http.MethodPatch, path, bodyText, headers)
+}
+
+func (c *Client) DeleteRawResponse(path, bodyText string, headers http.Header) ([]byte, http.Header, []*http.Cookie, error) {
+	return c.doRawResponse(http.MethodDelete, path, bodyText, headers)
+}
+
+func (c *Client) doRawResponse(method, path, bodyText string, headers http.Header) ([]byte, http.Header, []*http.Cookie, error) {
+	req, err := http.NewRequest(method, c.URL(path), bytes.NewBufferString(bodyText))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	c.applyRequestHost(req)
+	if c.Username != "" || c.Password != "" {
+		req.SetBasicAuth(c.Username, c.Password)
+	}
+	if headers.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, resp.Header, resp.Cookies(), errors.New(resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	return body, resp.Header, resp.Cookies(), err
+}
+
 func (c *Client) applyRequestHost(req *http.Request) {
 	if c.HostHeader != "" {
 		req.Host = c.HostHeader

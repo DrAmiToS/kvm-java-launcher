@@ -13,6 +13,8 @@ import (
 
 func PlanSupermicro(c *Client) (*LaunchPlan, error) {
 	paths := append([]string{
+		"/cgi/url_redirect.cgi?url_name=man_ikvm&url_type=jwsk",
+		"/cgi/url_redirect.cgi?url_name=man_ikvm&url_type=jnlp",
 		"/cgi/url_redirect.cgi?url_name=ikvm&url_type=jwsk",
 		"/cgi/url_redirect.cgi?url_name=ikvm&url_type=jnlp",
 		"/Java/jviewer.jnlp",

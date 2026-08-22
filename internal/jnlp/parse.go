@@ -190,25 +190,23 @@ func downloadResourceCandidates(client *http.Client, rawURL, dir string, headers
 }
 
 func resourceCandidates(rawURL string) []string {
-	out := withPackedVariant(nil, rawURL)
+	out := appendUnique(nil, rawURL)
 	for _, candidate := range versionedJarProtocolURLs(rawURL) {
-		out = withPackedVariant(out, candidate)
+		out = appendUnique(out, candidate)
 	}
 	if fallbackURL := unversionedJarURL(rawURL); fallbackURL != "" {
-		out = withPackedVariant(out, fallbackURL)
+		out = appendUnique(out, fallbackURL)
 		for _, candidate := range alternateJarDirectoryURLs(fallbackURL) {
-			out = withPackedVariant(out, candidate)
+			out = appendUnique(out, candidate)
+		}
+	}
+	baseCandidates := append([]string(nil), out...)
+	for _, candidate := range baseCandidates {
+		if strings.HasSuffix(strings.ToLower(candidate), ".jar") {
+			out = appendUnique(out, candidate+".pack.gz")
 		}
 	}
 	return out
-}
-
-func withPackedVariant(values []string, rawURL string) []string {
-	values = appendUnique(values, rawURL)
-	if strings.HasSuffix(strings.ToLower(rawURL), ".jar") {
-		values = appendUnique(values, rawURL+".pack.gz")
-	}
-	return values
 }
 
 func versionedJarProtocolURLs(rawURL string) []string {

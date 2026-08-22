@@ -21,6 +21,7 @@ const (
 	ProfileLenovo        Profile = "lenovo"
 	ProfileGenericJNLP   Profile = "generic"
 	ProfileManualJNLP    Profile = "manual"
+	ProfileLocalJNLP     Profile = "jnlp"
 )
 
 type LaunchPlan struct {
@@ -31,6 +32,10 @@ type LaunchPlan struct {
 	Args         []string
 	Headers      http.Header
 	PostExitPath string
+}
+
+func (p Profile) IsSupermicro() bool {
+	return p == ProfileSupermicro || p == ProfileSupermicroSOL
 }
 
 type AMISession struct {

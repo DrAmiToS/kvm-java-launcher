@@ -12,7 +12,8 @@ Current profiles:
 - `dell`, `hp`, `hpe`, `lenovo`, `ibm` - experimental vendor JNLP discovery.
 - `auto` - detects AMI MegaRAC from the web page, detects Supermicro when the
   landing page says so, otherwise tries generic JNLP.
-- `manual` - starts a local JNLP file through the built-in Java/JAR runner.
+- `jnlp`, `manual` - starts a local JNLP file through the built-in Java/JAR
+  runner.
 
 The Windows build embeds Eclipse Temurin Java 8 x64 and extracts it to the
 user cache on first run. Java does not need to be installed separately.
@@ -25,7 +26,8 @@ KVM-Java-Launcher.exe -target 10.168.68.120 -user ADMIN -password ADMIN -profile
 KVM-Java-Launcher.exe -target 10.168.68.121 -user ADMIN -password ADMIN -profile supermicro
 KVM-Java-Launcher.exe -target 10.168.68.122 -user root -password calvin -profile dell
 KVM-Java-Launcher.exe -target 90.189.216.197 -host-header 192.168.7.70 -user root -password calvin -profile dell
-KVM-Java-Launcher.exe -profile manual -jnlp C:\Users\Admin\Downloads\launch.jnlp
+KVM-Java-Launcher.exe -profile jnlp -jnlp C:\Users\Admin\Downloads\launch.jnlp
+KVM-Java-Launcher.exe -target 10.168.68.120 -user ADMIN -password ADMIN -profile jnlp -jnlp C:\Users\Admin\Downloads\launch.jnlp
 ```
 
 If started without arguments, the program asks for host, user, password, and

@@ -96,18 +96,22 @@ func TestResourceCandidatesForVersionedJar(t *testing.T) {
 	t.Parallel()
 
 	got := resourceCandidates("http://10.168.68.120:80/iKVM__V1.69.21.0x0.jar")
-	want := []string{
-		"http://10.168.68.120:80/iKVM__V1.69.21.0x0.jar",
-		"http://10.168.68.120:80/iKVM__V1.69.21.0x0.jar.pack.gz",
-		"http://10.168.68.120:80/iKVM.jar?version-id=1.69.21.0x0",
-		"http://10.168.68.120:80/iKVM.jar",
+	versionedJar := indexString(got, "http://10.168.68.120:80/iKVM__V1.69.21.0x0.jar")
+	unversionedJar := indexString(got, "http://10.168.68.120:80/iKVM.jar")
+	packedJar := indexString(got, "http://10.168.68.120:80/iKVM__V1.69.21.0x0.jar.pack.gz")
+	if versionedJar < 0 || unversionedJar < 0 || packedJar < 0 {
+		t.Fatalf("missing expected candidates: %#v", got)
 	}
-	for i, wantURL := range want {
-		if len(got) <= i {
-			t.Fatalf("missing candidate %d = %q; all = %#v", i, wantURL, got)
-		}
-		if got[i] != wantURL {
-			t.Fatalf("candidate %d = %q, want %q; all = %#v", i, got[i], wantURL, got)
+	if !(versionedJar < unversionedJar && unversionedJar < packedJar) {
+		t.Fatalf("packed candidates should come after plain jar fallbacks: %#v", got)
+	}
+}
+
+func indexString(values []string, needle string) int {
+	for i, value := range values {
+		if value == needle {
+			return i
 		}
 	}
+	return -1
 }
