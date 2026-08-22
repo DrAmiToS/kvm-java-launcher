@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KVM Java Launcher - GUI Concept</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f2;
+      --surface: #ffffff;
+      --text: #20231f;
+      --muted: #646b61;
+      --line: #d6dbd1;
+      --accent: #0f766e;
+      font-family: "Segoe UI", Inter, Arial, sans-serif;
+      font-size: 15px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      letter-spacing: 0;
+      padding: 32px;
+    }
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+    h1 { margin: 0; font-size: 1.8rem; }
+    p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    a {
+      display: grid;
+      gap: 8px;
+      min-height: 150px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      text-decoration: none;
+    }
+    a strong { font-size: 1.05rem; }
+    a span { color: var(--muted); line-height: 1.45; }
+    a:hover { border-color: var(--accent); }
+    @media (max-width: 760px) {
+      body { padding: 18px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>KVM Java Launcher GUI Concept</h1>
+    <p>Selected static layout concept for the future graphical interface.</p>
+    <section class="grid">
+      <a href="03-vertical-library.html">
+        <strong>Vertical Library</strong>
+        <span>Connection editor and launch log on the left, encrypted saved connection book on the right, with independent scrolling areas.</span>
+      </a>
+    </section>
+  </main>
+</body>
+</html>

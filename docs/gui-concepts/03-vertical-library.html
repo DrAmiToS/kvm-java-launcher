@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KVM Java Launcher - GUI Concept</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --font-scale: 1;
+      --bg: #f5f6f4;
+      --surface: #ffffff;
+      --surface-2: #eef1ed;
+      --text: #20231f;
+      --muted: #626a60;
+      --line: #d5dbd2;
+      --accent: #28644f;
+      --accent-2: #8a4b24;
+      --warn: #a7660a;
+      --ok: #197a45;
+      --shadow: 0 10px 26px rgba(20, 28, 20, .08);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      font-size: calc(15px * var(--font-scale));
+    }
+    body.dark {
+      color-scheme: dark;
+      --bg: #151815;
+      --surface: #20251f;
+      --surface-2: #2b3129;
+      --text: #edf1ea;
+      --muted: #aeb7aa;
+      --line: #3b4438;
+      --accent: #76bd9f;
+      --accent-2: #d5945c;
+      --warn: #f0b451;
+      --ok: #75c893;
+      --shadow: 0 10px 30px rgba(0, 0, 0, .28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      letter-spacing: 0;
+      overflow: hidden;
+    }
+    button, input, select, textarea { font: inherit; }
+    button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      padding: 0 12px;
+      border-radius: 6px;
+      cursor: default;
+    }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+      font-weight: 650;
+    }
+    button.icon {
+      width: 36px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+    input, select, textarea {
+      width: 100%;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 7px 10px;
+    }
+    textarea { min-height: 74px; resize: vertical; }
+    label { display: grid; gap: 5px; color: var(--muted); font-size: .86rem; }
+    .app { height: 100vh; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      z-index: 1;
+    }
+    .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+    .brand h1 { font-size: 1.05rem; margin: 0; white-space: nowrap; }
+    .status { color: var(--muted); white-space: nowrap; font-size: .88rem; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .segmented {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--surface-2);
+    }
+    .segmented button { border: 0; border-radius: 0; background: transparent; min-height: 34px; }
+    .segmented button.active { background: var(--surface); color: var(--accent); font-weight: 650; }
+    .scale { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+    .scale input { padding: 0; min-height: 28px; }
+    .main {
+      display: grid;
+      grid-template-columns: minmax(380px, 48%) minmax(340px, 1fr);
+      min-height: 0;
+      overflow: hidden;
+      gap: 1px;
+      background: var(--line);
+    }
+    .pane { background: var(--bg); min-width: 0; min-height: 0; overflow: auto; }
+    .pane-inner { padding: 14px; display: grid; gap: 12px; }
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+    }
+    .section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .section-title h2 { font-size: .95rem; margin: 0; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .search-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; }
+    .summary {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+    .summary strong { font-size: .92rem; }
+    .summary span { color: var(--muted); font-size: .84rem; }
+    .group-title {
+      margin: 14px 0 7px;
+      color: var(--muted);
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .connection-list { display: grid; gap: 8px; }
+    .connection {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px;
+      display: grid;
+      gap: 8px;
+    }
+    .connection.active { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+    .connection-head { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+    .connection strong { font-size: .95rem; }
+    .meta { color: var(--muted); font-size: .84rem; display: flex; gap: 8px; flex-wrap: wrap; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: .75rem;
+      color: var(--muted);
+    }
+    .badge.warn { color: var(--warn); }
+    .badge.ok { color: var(--ok); }
+    .log {
+      background: #111713;
+      color: #d6f2df;
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 150px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: .82rem;
+      line-height: 1.45;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 940px) {
+      .main { grid-template-columns: 1fr; }
+      .topbar { align-items: start; flex-direction: column; }
+      .toolbar { justify-content: start; }
+    }
+    @media (max-width: 640px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .search-row { grid-template-columns: 1fr auto; }
+      .search-row .wide { grid-column: 1 / -1; }
+      .pane-inner { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>KVM Java Launcher</h1>
+        <span class="status">Library layout · 18 saved connections</span>
+      </div>
+      <div class="toolbar">
+        <div class="segmented" aria-label="Theme">
+          <button class="active" onclick="document.body.classList.remove('dark')">Light</button>
+          <button onclick="document.body.classList.add('dark')">Dark</button>
+          <button>System</button>
+        </div>
+        <label class="scale">Scale <input type="range" min="85" max="135" value="100" oninput="document.documentElement.style.setProperty('--font-scale', this.value / 100)"></label>
+        <button title="Lock connection book">Lock</button>
+      </div>
+    </header>
+    <main class="main">
+      <section class="pane">
+        <div class="pane-inner">
+          <div class="section">
+            <div class="section-title">
+              <h2>Connection</h2>
+            </div>
+            <div class="summary">
+              <strong>Selected: R730xd iDRAC NAT</strong>
+              <span>Saved password, Host header override, Dell logout after KVM exits.</span>
+            </div>
+            <div class="grid-2">
+              <label>Name <input value="R730xd iDRAC NAT"></label>
+              <label>Group <input value="Customer A / Dell"></label>
+            </div>
+            <div class="grid-2">
+              <label>BMC IP / URL <input value="90.189.216.197"></label>
+              <label>Host header for NAT <input value="192.168.7.70"></label>
+            </div>
+            <div class="grid-2">
+              <label>User <input value="realts"></label>
+              <label>Password <input type="password" value="temporary"></label>
+            </div>
+            <div class="grid-3">
+              <label>Profile <select><option>dell</option><option>supermicro</option><option>hp</option><option>jnlp</option><option>auto</option></select></label>
+              <label>Cert mode <select><option>default</option><option>noverify</option><option>off</option></select></label>
+              <label>Time workaround <select><option>off</option><option>auto</option></select></label>
+            </div>
+            <label>Local JNLP <input placeholder="C:\Users\Admin\Downloads\viewer.jnlp"></label>
+            <label>Notes <textarea>Library variation: calmer list, wider editor, more readable saved connection cards.</textarea></label>
+            <div class="actions">
+              <button class="primary">Connect</button>
+              <button>Test</button>
+              <button>Save</button>
+              <button>Save as New</button>
+              <button>Duplicate</button>
+              <button>Browse JNLP</button>
+              <button>Clear</button>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-title">
+              <h2>Launch Log</h2>
+              <button class="icon" title="Copy log">C</button>
+            </div>
+            <div class="log">Dell iDRAC web login: launch token received
+Using Host header override: 192.168.7.70
+Using JNLP: https://90.189.216.197/viewer.jnlp(...)
+Starting Java KVM...
+Waiting for Java KVM to exit...</div>
+          </div>
+        </div>
+      </section>
+      <aside class="pane">
+        <div class="pane-inner">
+          <div class="section">
+            <div class="search-row">
+              <input class="wide" placeholder="Search saved connections">
+              <button class="icon" title="Filter">=</button>
+              <button class="icon" title="New">+</button>
+            </div>
+          </div>
+          <div>
+            <div class="group-title"><span>Lab / Supermicro</span><span>2</span></div>
+            <div class="connection-list">
+              <article class="connection">
+                <div class="connection-head"><strong>SMCI X12 Java iKVM</strong><button class="icon" title="Connect">&gt;</button></div>
+                <div class="meta"><span>192.168.33.13</span><span>ADMIN</span><span>supermicro</span></div>
+                <div class="badges"><span class="badge warn">time auto</span><span class="badge">noverify</span><span class="badge ok">password saved</span></div>
+              </article>
+              <article class="connection">
+                <div class="connection-head"><strong>Old ATEN iKVM</strong><button class="icon" title="Connect">&gt;</button></div>
+                <div class="meta"><span>10.168.68.3</span><span>ADMIN</span><span>supermicro</span></div>
+                <div class="badges"><span class="badge">pack200</span><span class="badge ok">password saved</span></div>
+              </article>
+            </div>
+            <div class="group-title"><span>Customer A / Dell</span><span>1</span></div>
+            <div class="connection-list">
+              <article class="connection active">
+                <div class="connection-head"><strong>R730xd iDRAC NAT</strong><button class="icon" title="Connect">&gt;</button></div>
+                <div class="meta"><span>90.189.216.197</span><span>realts</span><span>dell</span></div>
+                <div class="badges"><span class="badge">host header</span><span class="badge ok">password saved</span><span class="badge">logout</span></div>
+              </article>
+            </div>
+            <div class="group-title"><span>Lab / HPE</span><span>1</span></div>
+            <div class="connection-list">
+              <article class="connection">
+                <div class="connection-head"><strong>Core HPE iLO4</strong><button class="icon" title="Connect">&gt;</button></div>
+                <div class="meta"><span>10.1.32.147</span><span>administrator</span><span>hp</span></div>
+                <div class="badges"><span class="badge ok">iLO Advanced</span><span class="badge">Java IRC</span></div>
+              </article>
+            </div>
+            <div class="group-title"><span>One-off JNLP</span><span>1</span></div>
+            <div class="connection-list">
+              <article class="connection">
+                <div class="connection-head"><strong>Downloaded SOL</strong><button class="icon" title="Connect">&gt;</button></div>
+                <div class="meta"><span>launch.jnlp</span><span>jnlp</span></div>
+                <div class="badges"><span class="badge">local file</span></div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+</body>
+</html>
