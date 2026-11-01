@@ -1,0 +1,14 @@
+# Generated packages and executables
+*.zip
+!internal/java/OpenJDK8U-jre_x64_windows_hotspot.zip
+*.exe
+dist/
+
+# Local development and downloaded BMC files
+.gradle/
+.vscode/
+dev_items/
+*.jnlp
+
+# Go build outputs
+*.test

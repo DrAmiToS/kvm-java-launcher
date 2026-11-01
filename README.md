@@ -18,6 +18,11 @@ Current profiles:
 The Windows build embeds Eclipse Temurin Java 8 x64 and extracts it to the
 user cache on first run. Java does not need to be installed separately.
 
+Starting `KVM-Java-Launcher.exe` without command-line arguments opens the
+graphical interface. Starting it with flags keeps the existing CLI behavior.
+The GUI is built with Fyne and uses a virtualized connection list, so the
+connection book can grow without creating one native control per saved server.
+
 Examples:
 
 ```bat
@@ -30,8 +35,8 @@ KVM-Java-Launcher.exe -profile jnlp -jnlp C:\Users\Admin\Downloads\launch.jnlp
 KVM-Java-Launcher.exe -target 10.168.68.120 -user ADMIN -password ADMIN -profile jnlp -jnlp C:\Users\Admin\Downloads\launch.jnlp
 ```
 
-If started without arguments, the program asks for host, user, password, and
-profile interactively.
+For console-style interactive prompts, start the program with any CLI flag but
+without a target, for example `KVM-Java-Launcher.exe -profile auto`.
 
 NAT notes:
 

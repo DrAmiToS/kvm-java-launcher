@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -11,10 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	runtimedebug "runtime/debug"
 	"strings"
 	"time"
 
 	"kvm-java-launcher/internal/bmc"
+	"kvm-java-launcher/internal/gui"
 	"kvm-java-launcher/internal/java"
 	"kvm-java-launcher/internal/jnlp"
 )
@@ -28,9 +31,39 @@ type options struct {
 	hostHeader string
 	smCertMode string
 	smTimeMode string
+	noPause    bool
+	debug      bool
 }
 
+var debugOutputEnabled bool
+
 func main() {
+	normalizeDebugArg(os.Args[1:])
+	closeDebugConsole := setupDebugConsole(debugRequested(os.Args[1:]))
+	defer closeDebugConsole()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "PANIC: %v\n\n%s\n", r, runtimedebug.Stack())
+			os.Exit(2)
+		}
+	}()
+
+	if len(os.Args) == 1 {
+		configureSoftwareOpenGL(false)
+		if err := guiPreflight(); err != nil {
+			runInteractiveFallback(err)
+			return
+		}
+		if err := gui.Run(); err != nil {
+			fmt.Println("ERROR:", err)
+			fmt.Println()
+			fmt.Println("Press Enter to exit...")
+			_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+			os.Exit(1)
+		}
+		return
+	}
+
 	var opts options
 	flag.StringVar(&opts.target, "target", "", "BMC URL or host/IP")
 	flag.StringVar(&opts.user, "user", "", "BMC username")
@@ -40,17 +73,104 @@ func main() {
 	flag.StringVar(&opts.hostHeader, "host-header", "", "HTTP Host/SNI override for NAT, for example 192.168.7.70")
 	flag.StringVar(&opts.smCertMode, "supermicro-cert-mode", "noverify", "Supermicro expired ATEN cert mode: noverify, renew-client, direct, off")
 	flag.StringVar(&opts.smTimeMode, "supermicro-time-workaround", "off", "Supermicro expired ATEN cert BMC time workaround: off, auto")
+	flag.BoolVar(&opts.noPause, "no-pause", false, "do not wait for Enter after an error")
+	flag.BoolVar(&opts.debug, "debug", false, "write startup/debug output to console")
 	flag.Parse()
+
+	if opts.debug && opts.target == "" && opts.jnlpPath == "" && flag.NArg() == 0 {
+		configureSoftwareOpenGL(true)
+		if err := guiPreflight(); err != nil {
+			runInteractiveFallback(err)
+			return
+		}
+		if err := gui.Run(); err != nil {
+			fmt.Println("ERROR:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if opts.target == "" && opts.jnlpPath == "" {
 		opts = askOptions(opts)
 	}
 	if err := run(opts); err != nil {
 		fmt.Println("ERROR:", err)
+		if !opts.noPause {
+			fmt.Println()
+			fmt.Println("Press Enter to exit...")
+			_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		}
+		os.Exit(1)
+	}
+}
+
+func runInteractiveFallback(reason error) {
+	cleanup := attachDebugConsole()
+	defer cleanup()
+	log.SetOutput(os.Stderr)
+	fmt.Println("KVM Java Launcher")
+	fmt.Println()
+	fmt.Println("GUI is unavailable: OpenGL/WGL could not be initialized.")
+	fmt.Println("Reason:", reason)
+	fmt.Println()
+	fmt.Println("You can continue in interactive CLI mode.")
+	fmt.Println("For GUI over RDP/VM/server sessions, use the software OpenGL package:")
+	fmt.Println("  KVM-Java-Launcher-windows-software-opengl.zip")
+	fmt.Println("Mesa3D software OpenGL source:")
+	fmt.Println("  https://github.com/pal1000/mesa-dist-win")
+	fmt.Println()
+	opts := askOptions(options{})
+	if err := run(opts); err != nil {
+		fmt.Println("ERROR:", err)
 		fmt.Println()
 		fmt.Println("Press Enter to exit...")
 		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 		os.Exit(1)
+	}
+}
+
+func normalizeDebugArg(args []string) {
+	for i, arg := range args {
+		if arg == "/debug" {
+			args[i] = "-debug"
+		}
+	}
+}
+
+func debugRequested(args []string) bool {
+	if os.Getenv("KVMJL_DEBUG") != "" || os.Getenv("KVM_JAVA_LAUNCHER_DEBUG") != "" {
+		return true
+	}
+	for _, arg := range args {
+		if arg == "-debug" || arg == "--debug" || arg == "/debug" {
+			return true
+		}
+	}
+	return false
+}
+
+func setupDebugConsole(enabled bool) func() {
+	if !enabled {
+		return func() {}
+	}
+	debugOutputEnabled = true
+	cleanup := attachDebugConsole()
+	log.SetOutput(os.Stderr)
+	fmt.Println("KVM Java Launcher debug console")
+	fmt.Println("Started:", time.Now().Format(time.RFC3339))
+	fmt.Println("Executable:", os.Args[0])
+	fmt.Println("Args:", redact(os.Args[1:]))
+	fmt.Println("OS:", runtime.GOOS, runtime.GOARCH)
+	fmt.Println("Session:", os.Getenv("SESSIONNAME"))
+	if note := debugConsoleNote(); note != "" {
+		fmt.Println(note)
+	}
+	fmt.Println("Note: GUI startup requires a working OpenGL 2.1 compatible Windows driver.")
+	fmt.Println()
+	return func() {
+		fmt.Println()
+		fmt.Println("Finished:", time.Now().Format(time.RFC3339))
+		cleanup()
 	}
 }
 
@@ -128,10 +248,6 @@ func run(opts options) error {
 	}
 	profile := bmc.Profile(strings.ToLower(opts.profile))
 	profile = normalizeProfile(profile)
-	if profile == bmc.ProfileAuto {
-		profile = bmc.Detect(client)
-		fmt.Println("Detected profile:", profile)
-	}
 
 	var plan *bmc.LaunchPlan
 	switch profile {
@@ -156,6 +272,8 @@ func run(opts options) error {
 	case bmc.ProfileGenericJNLP:
 		fmt.Println("Looking for vendor JNLP...")
 		plan, err = bmc.PlanGenericJNLP(client, profile)
+	case bmc.ProfileAuto:
+		plan, err = planAuto(client)
 	default:
 		err = fmt.Errorf("unsupported profile %q", profile)
 	}
@@ -188,6 +306,72 @@ func run(opts options) error {
 		return launchDownloadedJNLP(javaExe, client, plan, path, work, opts.smCertMode, opts.smTimeMode)
 	}
 	return fmt.Errorf("profile %s did not produce a launch plan", plan.Profile)
+}
+
+func planAuto(client *bmc.Client) (*bmc.LaunchPlan, error) {
+	detected, path, detectedClient := detectAutoClient(client)
+	if detected != bmc.ProfileGenericJNLP {
+		if detectedClient != client {
+			*client = *detectedClient
+		}
+		if path != "" {
+			fmt.Println("Detected profile:", detected, "via", client.BaseURL.Scheme+"://"+client.BaseURL.Host+path)
+		} else {
+			fmt.Println("Detected profile:", detected)
+		}
+		return planDetected(client, detected)
+	}
+	fmt.Println("Detected profile: generic")
+	fmt.Println("Looking for vendor JNLP...")
+	plan, err := bmc.PlanGenericJNLP(client, bmc.ProfileGenericJNLP)
+	if err == nil {
+		return plan, nil
+	}
+	fmt.Println("Auto fallback: trying Supermicro JNLP discovery...")
+	if supermicroPlan, supermicroErr := bmc.PlanSupermicro(client); supermicroErr == nil {
+		return supermicroPlan, nil
+	}
+	return nil, err
+}
+
+func detectAutoClient(client *bmc.Client) (bmc.Profile, string, *bmc.Client) {
+	candidates := []*bmc.Client{client}
+	altScheme := "http"
+	if client.BaseURL.Scheme == "http" {
+		altScheme = "https"
+	}
+	candidates = append(candidates, client.WithScheme(altScheme))
+	for _, candidate := range candidates {
+		if profile, path, ok := bmc.Fingerprint(candidate); ok {
+			return profile, path, candidate
+		}
+	}
+	return bmc.ProfileGenericJNLP, "", client
+}
+
+func planDetected(client *bmc.Client, profile bmc.Profile) (*bmc.LaunchPlan, error) {
+	switch profile {
+	case bmc.ProfileAMIMegaRAC:
+		fmt.Println("Logging in as AMI MegaRAC...")
+		return bmc.PlanAMI(client)
+	case bmc.ProfileSupermicro:
+		fmt.Println("Looking for Supermicro JNLP...")
+		return bmc.PlanSupermicro(client)
+	case bmc.ProfileDell:
+		fmt.Println("Looking for Dell iDRAC JNLP...")
+		return bmc.PlanDell(client)
+	case bmc.ProfileHP:
+		fmt.Println("Looking for HPE iLO JNLP...")
+		return bmc.PlanHP(client)
+	case bmc.ProfileLenovo:
+		fmt.Println("Looking for Lenovo remote console JNLP...")
+		return bmc.PlanLenovo(client)
+	case bmc.ProfileGenericJNLP:
+		fmt.Println("Looking for vendor JNLP...")
+		return bmc.PlanGenericJNLP(client, profile)
+	default:
+		return nil, fmt.Errorf("unsupported profile %q", profile)
+	}
 }
 
 func normalizeProfile(profile bmc.Profile) bmc.Profile {
@@ -504,15 +688,26 @@ func launchParsedJNLPWithStart(javaExe string, client *bmc.Client, dir string, p
 		if documentBase == "" {
 			documentBase = parsed.Codebase
 		}
-		args := []string{
+		javaProps := []string{
 			"-Duser.language=en",
 			"-Duser.country=US",
+		}
+		if isHPEApplet(parsed) {
+			hpProps, err := hpLegacyJavaProperties(dir)
+			if err != nil {
+				fmt.Println("HPE iLO compatibility: could not enable legacy Java TLS settings:", err)
+			} else {
+				fmt.Println("HPE iLO compatibility: enabling Java TLSv1/legacy handshake settings")
+				javaProps = append(javaProps, hpProps...)
+			}
+		}
+		args := append(javaProps, []string{
 			"-Djava.library.path=" + native,
 			"-cp", jnlp.Classpath(append([]string{runner}, jars...)),
 			"kvm.launcher.AppletRunner",
 			parsed.Main,
 			documentBase,
-		}
+		}...)
 		for _, param := range parsed.Params {
 			args = append(args, param.Name+"="+param.Value)
 		}
@@ -562,6 +757,38 @@ func launchParsedJNLPWithStart(javaExe string, client *bmc.Client, dir string, p
 		afterExit()
 	}
 	return err
+}
+
+func isHPEApplet(parsed *jnlp.File) bool {
+	if parsed == nil || !parsed.Applet {
+		return false
+	}
+	mainClass := strings.ToLower(parsed.Main)
+	documentBase := strings.ToLower(parsed.DocumentBase)
+	return strings.Contains(mainClass, "com.hp.ilo") ||
+		strings.Contains(mainClass, "intgapp") ||
+		strings.Contains(documentBase, "/html/java_irc")
+}
+
+func hpLegacyJavaProperties(dir string) ([]string, error) {
+	securityPath := filepath.Join(dir, "hp-legacy-java.security")
+	security := strings.Join([]string{
+		"# KVM Java Launcher per-session compatibility settings for legacy HPE iLO Java IRC.",
+		"# Newer Java 8 builds disable TLSv1 globally, but old iLO 2/3 firmware may still require it.",
+		"jdk.tls.disabledAlgorithms=SSLv3, RC4, DES, MD5withRSA, DH keySize < 1024, EC keySize < 224, anon, NULL",
+		"",
+	}, "\n")
+	if err := os.WriteFile(securityPath, []byte(security), 0600); err != nil {
+		return nil, err
+	}
+	return []string{
+		"-Djava.security.properties=" + securityPath,
+		"-Dhttps.protocols=TLSv1",
+		"-Djdk.tls.client.protocols=TLSv1",
+		"-Dsun.security.ssl.allowUnsafeRenegotiation=true",
+		"-Dsun.security.ssl.allowLegacyHelloMessages=true",
+		"-Djsse.enableSNIExtension=false",
+	}, nil
 }
 
 func bypassSupermicroStunnel(parsed *jnlp.File) bool {
@@ -654,6 +881,7 @@ func unpackPackedJars(javaExe string, jars []string) ([]string, error) {
 			return nil, err
 		}
 		cmd := exec.Command(javaExe, "-cp", runner, "kvm.launcher.Pack200Unpacker", path, jarPath)
+		cmd.SysProcAttr = hiddenConsoleSysProcAttr()
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -688,8 +916,9 @@ func startAndWait(javaExe string, args []string, dir string, afterExit func()) e
 }
 
 func javaCommand(javaExe string, args []string, dir string) *exec.Cmd {
-	if runtime.GOOS != "windows" {
+	if runtime.GOOS != "windows" || debugOutputEnabled {
 		fmt.Println("Java:", javaExe)
+		fmt.Println("Workdir:", dir)
 		fmt.Println("Args:", redact(args))
 	}
 	cmd := exec.Command(javaExe, args...)
@@ -697,13 +926,19 @@ func javaCommand(javaExe string, args []string, dir string) *exec.Cmd {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
+	cmd.SysProcAttr = hiddenConsoleSysProcAttr()
 	return cmd
 }
 
 func redact(args []string) []string {
 	out := append([]string(nil), args...)
-	for i := 0; i+1 < len(out); i++ {
-		if out[i] == "-p" || strings.Contains(strings.ToLower(out[i]), "password") {
+	for i := 0; i < len(out); i++ {
+		lower := strings.ToLower(out[i])
+		if strings.HasPrefix(lower, "-password=") || strings.HasPrefix(lower, "--password=") {
+			out[i] = out[i][:strings.Index(out[i], "=")+1] + "********"
+			continue
+		}
+		if i+1 < len(out) && (out[i] == "-p" || strings.Contains(lower, "password")) {
 			out[i+1] = "********"
 		}
 	}

@@ -50,18 +50,68 @@ type AMISession struct {
 }
 
 func Detect(c *Client) Profile {
-	body, err := c.Get("/")
-	if err != nil {
-		return ProfileSupermicro
-	}
-	text := strings.ToLower(string(body))
-	if strings.Contains(text, "megarac") || strings.Contains(text, "american megatrends") || strings.Contains(text, "jviewer.jnlp") {
-		return ProfileAMIMegaRAC
-	}
-	if strings.Contains(text, "supermicro") {
-		return ProfileSupermicro
+	if profile, _, ok := Fingerprint(c); ok {
+		return profile
 	}
 	return ProfileGenericJNLP
+}
+
+func Fingerprint(c *Client) (Profile, string, bool) {
+	paths := []string{
+		"/",
+		"/login.html",
+		"/index.html",
+		"/index.htm",
+		"/start.html",
+		"/cgi/login.cgi",
+		"/cgi/url_redirect.cgi?url_name=ikvm&url_type=jwsk",
+		"/html/login.html",
+		"/html/java_irc.html",
+		"/redfish/v1/",
+	}
+	for _, path := range paths {
+		body, err := c.GetWithHeaders(path, http.Header{"User-Agent": {"Mozilla/5.0"}})
+		if err != nil {
+			continue
+		}
+		if profile, ok := fingerprintBody(body); ok {
+			return profile, path, true
+		}
+	}
+	return ProfileGenericJNLP, "", false
+}
+
+func fingerprintBody(body []byte) (Profile, bool) {
+	text := strings.ToLower(string(body))
+	if strings.Contains(text, "megarac") || strings.Contains(text, "american megatrends") || strings.Contains(text, "jviewer.jnlp") {
+		return ProfileAMIMegaRAC, true
+	}
+	if strings.Contains(text, "supermicro") ||
+		strings.Contains(text, "aten international") ||
+		strings.Contains(text, "url_redirect.cgi") ||
+		strings.Contains(text, "man_ikvm") ||
+		strings.Contains(text, "ikvm") && strings.Contains(text, "sid") {
+		return ProfileSupermicro, true
+	}
+	if strings.Contains(text, "idrac") ||
+		strings.Contains(text, "integrated dell remote access") ||
+		strings.Contains(text, "poweredge") ||
+		strings.Contains(text, "/data/login") {
+		return ProfileDell, true
+	}
+	if strings.Contains(text, "hpe ilo") ||
+		strings.Contains(text, "hp ilo") ||
+		strings.Contains(text, "integrated lights-out") ||
+		strings.Contains(text, "java_irc.html") ||
+		strings.Contains(text, "intgapp") {
+		return ProfileHP, true
+	}
+	if strings.Contains(text, "xclarity") ||
+		strings.Contains(text, "integrated management module") ||
+		strings.Contains(text, "lenovo") && strings.Contains(text, "remote console") {
+		return ProfileLenovo, true
+	}
+	return ProfileGenericJNLP, false
 }
 
 func LoginAMI(c *Client) (*AMISession, error) {

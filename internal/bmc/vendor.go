@@ -193,8 +193,17 @@ func PlanHP(c *Client) (*LaunchPlan, error) {
 		return planJNLP(c, ProfileHP, hpJNLPPaths(), isKVMJNLP)
 	}
 	fmt.Println("HPE iLO web login: session key received")
-	logHPLicense(c)
-	body := hpAppletJNLP(c, sessionKey, "/html/intgapp4_231.jar", "en")
+	license := logHPLicense(c)
+	jarPath := hpJavaIRCJarPath(c, license)
+	fmt.Println("HPE iLO Java IRC jar:", jarPath)
+	legacyMode := hpLegacyAppletMode(license)
+	if legacyMode {
+		fmt.Println("HPE iLO compatibility: enabling legacy Java IRC mode")
+		if !c.SchemeExplicit && strings.EqualFold(c.BaseURL.Scheme, "https") {
+			fmt.Println("HPE iLO compatibility: using HTTP applet document base because target scheme was not explicit")
+		}
+	}
+	body := hpAppletJNLP(c, sessionKey, jarPath, "en", legacyMode && !c.SchemeExplicit)
 	return &LaunchPlan{
 		Profile:  ProfileHP,
 		JNLPURL:  c.URL("/html/java_irc.html"),
@@ -241,20 +250,21 @@ func LoginHP(c *Client) (string, error) {
 	return "", fmt.Errorf("iLO login did not return session_key: %s", responseSnippet(body))
 }
 
-func logHPLicense(c *Client) {
+func logHPLicense(c *Client) string {
 	license, err := HPLicense(c)
 	if err != nil {
 		fmt.Println("HPE iLO license: unknown (" + err.Error() + ")")
-		return
+		return ""
 	}
 	if license == "" {
 		fmt.Println("HPE iLO license: unknown")
-		return
+		return ""
 	}
 	fmt.Println("HPE iLO license:", license)
 	if !strings.Contains(strings.ToLower(license), "advanced") {
 		fmt.Println("HPE iLO warning: Integrated Remote Console usually requires iLO Advanced")
 	}
+	return license
 }
 
 func HPLicense(c *Client) (string, error) {
@@ -278,6 +288,94 @@ func hpLicenseFromBody(body []byte) (string, error) {
 	return strings.TrimSpace(parsed.License), nil
 }
 
+func hpJavaIRCJarPath(c *Client, license string) string {
+	body, err := c.GetWithHeaders("/html/java_irc.html", http.Header{
+		"Accept":     {"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+		"User-Agent": {"Mozilla/5.0"},
+	})
+	if err == nil {
+		if jar := hpJavaIRCJarFromHTML(body); jar != "" {
+			return jar
+		}
+	}
+	return hpDefaultJavaIRCJar(license)
+}
+
+func hpDefaultJavaIRCJar(license string) string {
+	lower := strings.ToLower(license)
+	switch {
+	case strings.Contains(lower, "ilo 2"):
+		return "/html/intgapp2_231.jar"
+	case strings.Contains(lower, "ilo 3"):
+		return "/html/intgapp3_231.jar"
+	default:
+		return "/html/intgapp4_231.jar"
+	}
+}
+
+func hpLegacyAppletMode(license string) bool {
+	lower := strings.ToLower(license)
+	return strings.Contains(lower, "ilo 2") || strings.Contains(lower, "ilo 3")
+}
+
+func hpJavaIRCJarFromHTML(body []byte) string {
+	text := string(body)
+	patterns := []string{
+		`(?i)\barchive\s*=\s*["']([^"']+\.jar)["']`,
+		`(?i)\barchive\s*=\s*([^"'\s>]+\.jar)`,
+		`(?i)\bcode\s*=\s*["'][^"']*intgapp[^"']*["'][^>]*\barchive\s*=\s*["']([^"']+\.jar)["']`,
+		`(?i)(?:^|["'(/\s])((?:html/)?intgapp[0-9A-Za-z_.-]*\.jar)\b`,
+	}
+	for _, pattern := range patterns {
+		matches := regexp.MustCompile(pattern).FindAllStringSubmatch(text, -1)
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+			jar := normalizeHPJarPath(match[1])
+			if jar != "" {
+				return jar
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeHPJarPath(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, ",") {
+		for _, part := range strings.Split(value, ",") {
+			if jar := normalizeHPJarPath(part); jar != "" {
+				return jar
+			}
+		}
+		return ""
+	}
+	lower := strings.ToLower(value)
+	if !strings.HasSuffix(lower, ".jar") {
+		return ""
+	}
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		if u, err := url.Parse(value); err == nil && u.Path != "" {
+			value = u.Path
+		}
+	}
+	if strings.HasPrefix(value, "../") {
+		value = strings.TrimPrefix(value, "../")
+	}
+	if strings.HasPrefix(value, "/") {
+		return value
+	}
+	if strings.Contains(value, "/") {
+		return "/" + value
+	}
+	return "/html/" + value
+}
+
 func hpSessionKeyFromBody(body []byte) string {
 	patterns := []string{
 		`"session_key"\s*:\s*"([^"]+)"`,
@@ -293,14 +391,22 @@ func hpSessionKeyFromBody(body []byte) string {
 	return ""
 }
 
-func hpAppletJNLP(c *Client, sessionKey, jarPath, lang string) string {
+func hpAppletJNLP(c *Client, sessionKey, jarPath, lang string, httpDocumentBase bool) string {
 	if lang == "" {
 		lang = "en"
 	}
 	codebase := c.BaseURL.ResolveReference(&url.URL{Path: "/"}).String()
 	documentBase := c.URL("/html/java_irc.html?lang=" + url.QueryEscape(lang))
+	if httpDocumentBase {
+		u := *c.BaseURL
+		u.Scheme = "http"
+		u.Path = "/html/java_irc.html"
+		u.RawQuery = "lang=" + url.QueryEscape(lang)
+		u.Fragment = ""
+		documentBase = u.String()
+	}
 	return `<?xml version="1.0" encoding="UTF-8"?>
-<jnlp spec="1.0+" codebase="` + xmlEscape(codebase) + `" href="">
+	<jnlp spec="1.0+" codebase="` + xmlEscape(codebase) + `" href="">
   <information>
     <title>Integrated Remote Console</title>
     <vendor>HPE</vendor>

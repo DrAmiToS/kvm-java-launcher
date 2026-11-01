@@ -107,6 +107,26 @@ func TestResourceCandidatesForVersionedJar(t *testing.T) {
 	}
 }
 
+func TestResourceCandidatesIncludeHPEIntgappFallbacks(t *testing.T) {
+	t.Parallel()
+
+	got := resourceCandidates("https://ilo.example/html/intgapp4_231.jar")
+	for _, want := range []string{
+		"https://ilo.example/html/intgapp4_231.jar",
+		"https://ilo.example/html/intgapp3_231.jar",
+		"https://ilo.example/html/intgapp2_231.jar",
+		"https://ilo.example/html/M2.JAR",
+	} {
+		if indexString(got, want) < 0 {
+			t.Fatalf("resourceCandidates missing %q: %#v", want, got)
+		}
+	}
+	if indexString(got, "https://ilo.example/html/intgapp3_231.jar") >
+		indexString(got, "https://ilo.example/html/intgapp4_231.jar.pack.gz") {
+		t.Fatalf("HPE fallback jars should be tried before Pack200: %#v", got)
+	}
+}
+
 func indexString(values []string, needle string) int {
 	for i, value := range values {
 		if value == needle {

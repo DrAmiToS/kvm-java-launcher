@@ -56,6 +56,52 @@ func TestHPSessionKeyFromBody(t *testing.T) {
 	}
 }
 
+func TestFingerprintBody(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		body string
+		want Profile
+	}{
+		{
+			name: "supermicro aten page",
+			body: `<html><meta name="ATEN International Co Ltd."><script src="../js/lang/en/lang_str.js"></script><a href="/cgi/url_redirect.cgi?url_name=ikvm&url_type=jwsk">KVM</a></html>`,
+			want: ProfileSupermicro,
+		},
+		{
+			name: "ami megarac",
+			body: `<html>American Megatrends MegaRAC JViewer.jnlp</html>`,
+			want: ProfileAMIMegaRAC,
+		},
+		{
+			name: "dell idrac",
+			body: `<html><title>iDRAC</title><form action="/data/login"></form>PowerEdge</html>`,
+			want: ProfileDell,
+		},
+		{
+			name: "hpe ilo",
+			body: `<html>HPE iLO Integrated Lights-Out java_irc.html intgapp</html>`,
+			want: ProfileHP,
+		},
+		{
+			name: "lenovo xclarity",
+			body: `<html>Lenovo XClarity remote console</html>`,
+			want: ProfileLenovo,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := fingerprintBody([]byte(tc.body))
+			if !ok || got != tc.want {
+				t.Fatalf("fingerprintBody = %q, %v; want %q, true", got, ok, tc.want)
+			}
+		})
+	}
+}
+
 func TestHPLicenseFromBody(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +121,7 @@ func TestHPAppletJNLP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := hpAppletJNLP(client, "abc123", "/html/intgapp4_231.jar", "en")
+	body := hpAppletJNLP(client, "abc123", "/html/intgapp4_231.jar", "en", false)
 	for _, want := range []string{
 		`codebase="https://ilo.example/"`,
 		`href="html/intgapp4_231.jar"`,
@@ -86,5 +132,76 @@ func TestHPAppletJNLP(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("generated JNLP missing %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestHPAppletJNLPHTTPDocumentBase(t *testing.T) {
+	t.Parallel()
+
+	client, err := New("https://ilo.example", "administrator", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := hpAppletJNLP(client, "abc123", "/html/intgapp3_231.jar", "en", true)
+	for _, want := range []string{
+		`codebase="https://ilo.example/"`,
+		`href="html/intgapp3_231.jar"`,
+		`documentbase="http://ilo.example/html/java_irc.html?lang=en"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("generated JNLP missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestHPDefaultJavaIRCJar(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		license string
+		want    string
+	}{
+		{license: "iLO 2 Advanced", want: "/html/intgapp2_231.jar"},
+		{license: "iLO 3 Advanced", want: "/html/intgapp3_231.jar"},
+		{license: "iLO Advanced", want: "/html/intgapp4_231.jar"},
+		{license: "", want: "/html/intgapp4_231.jar"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.license, func(t *testing.T) {
+			if got := hpDefaultJavaIRCJar(tc.license); got != tc.want {
+				t.Fatalf("hpDefaultJavaIRCJar(%q) = %q, want %q", tc.license, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHPLegacyAppletMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		license string
+		want    bool
+	}{
+		{license: "iLO 2 Advanced", want: true},
+		{license: "iLO 3 Advanced", want: true},
+		{license: "iLO Advanced", want: false},
+		{license: "iLO 4 Advanced", want: false},
+		{license: "", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.license, func(t *testing.T) {
+			if got := hpLegacyAppletMode(tc.license); got != tc.want {
+				t.Fatalf("hpLegacyAppletMode(%q) = %v, want %v", tc.license, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHPJavaIRCJarFromHTML(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`<applet code="com.hp.ilo2.intgapp.intgapp.class" archive="intgapp3_231.jar"></applet>`)
+	if got, want := hpJavaIRCJarFromHTML(body), "/html/intgapp3_231.jar"; got != want {
+		t.Fatalf("hpJavaIRCJarFromHTML = %q, want %q", got, want)
 	}
 }

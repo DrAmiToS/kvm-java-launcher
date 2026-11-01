@@ -200,11 +200,43 @@ func resourceCandidates(rawURL string) []string {
 			out = appendUnique(out, candidate)
 		}
 	}
+	for _, candidate := range hpIntegratedRemoteConsoleJarURLs(rawURL) {
+		out = appendUnique(out, candidate)
+	}
 	baseCandidates := append([]string(nil), out...)
 	for _, candidate := range baseCandidates {
 		if strings.HasSuffix(strings.ToLower(candidate), ".jar") {
 			out = appendUnique(out, candidate+".pack.gz")
 		}
+	}
+	return out
+}
+
+func hpIntegratedRemoteConsoleJarURLs(rawURL string) []string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	name := filepath.Base(u.Path)
+	lower := strings.ToLower(name)
+	if !strings.HasPrefix(lower, "intgapp") || !strings.HasSuffix(lower, ".jar") {
+		return nil
+	}
+	dir := strings.TrimSuffix(u.Path, name)
+	var out []string
+	for _, alt := range []string{
+		"intgapp4_231.jar",
+		"intgapp3_231.jar",
+		"intgapp2_231.jar",
+		"intgapp_231.jar",
+		"intgapp.jar",
+		"M2.JAR",
+	} {
+		candidate := *u
+		candidate.RawQuery = ""
+		candidate.Fragment = ""
+		candidate.Path = dir + alt
+		out = appendUnique(out, candidate.String())
 	}
 	return out
 }
